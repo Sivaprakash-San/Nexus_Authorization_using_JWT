@@ -1,0 +1,29 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model client {
+  id      String    @id @default(uuid())
+  name    String
+  email   String    @unique
+  profile profile[]
+}
+
+model profile {
+  id         String  @id @default(uuid())
+  bio        String
+  is_deleted Boolean @default(false)
+  client_id  String
+  client     client  @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@index([client_id], name: "profile_client_index")
+  @@index([client_id, is_deleted], name: "profile_client_deleted_index")
+}
