@@ -1,5 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
-const { queryType, mutationType, stringArg, makeSchema, objectType, nonNull } = require('nexus');
+const { queryType, mutationType, stringArg, makeSchema, objectType, nonNull, fieldAuthorizePlugin } = require('nexus');
 const { ApolloServer, AuthenticationError } = require('apollo-server');
 const DataLoader = require('dataloader');
 const { setFields, setArrayFields } = require('./dataloader');
@@ -67,8 +67,8 @@ const query = queryType({
             args: {
                 id: nonNull(stringArg()),
             },
+            authorize: (_, args, context) => isUser(_,args,context),
             resolve: (_, args) => {
-
                 return prisma.client.findUnique({
                     where: {
                         id: args.id,
@@ -80,6 +80,7 @@ const query = queryType({
 
         t.list.field('manyClients', {
             type: 'client',
+            authorize: (_, args, context) => isUser(_,args,context),
             resolve: () => {
                 return prisma.client.findMany();
             },
@@ -90,10 +91,8 @@ const query = queryType({
             args: {
                 id: nonNull(stringArg()),
             },
-            resolve: (_, args,context) => {
-                if(!isUser(_,args,context)){
-                    return "authorization failed";
-                }
+            authorize: (_, args, context) => isUser(_,args,context),
+            resolve: (_, args) => {
                 return prisma.profile.findUnique({
                     where: {
                         id: args.id,
@@ -104,6 +103,7 @@ const query = queryType({
 
         t.list.field('manyProfiles', {
             type: 'profile',
+            authorize: async(_, args, context) => await isUser(_,args,context),
             resolve: () => {
                 return prisma.profile.findMany({
                     where:{
@@ -123,6 +123,7 @@ const mutation = mutationType({
                 name: nonNull(stringArg()),
                 email: nonNull(stringArg())
             },
+            authorize: (_, args, context) => isUser(_,args,context),
             resolve: async (_parent, args) => {
                 return prisma.client.create({
                     data: {
@@ -139,6 +140,7 @@ const mutation = mutationType({
                 bio:nonNull(stringArg()),
                 client_id: nonNull(stringArg()),
             },
+            authorize: (_, args, context) => isUser(_,args,context),
             resolve: (_parent, args) => {
                 return prisma.profile.create({
                     data: {
@@ -158,6 +160,7 @@ const mutation = mutationType({
             args: {
                 id: nonNull(stringArg()),
             },
+            authorize: (_, args, context) => isAdmin(_,args,context),
             resolve: (_, args) => {
                return prisma.client.delete({
                     where: {
@@ -172,10 +175,8 @@ const mutation = mutationType({
             args: {
                 id: nonNull(stringArg()),
             },
-            resolve: (_, args, context) => {
-                if(!isAdmin(_,args,context)){
-                    return "authorization failed";
-                }
+            authorize: (_, args, context) => isAdmin(_,args,context),
+            resolve: (_, args) => {
                 return prisma.profile.delete({
                     where: {
                         id: args.id,
@@ -190,6 +191,7 @@ const mutation = mutationType({
                 id: nonNull(stringArg()),
                 data: nonNull(stringArg()),
             },
+            authorize: (_, args, context) => isUser(_,args,context),
             resolve: (_, args) => {
                 clientLoader.clear(args.id);
                 return prisma.client.update({
@@ -209,6 +211,7 @@ const mutation = mutationType({
                 id: nonNull(stringArg()),
                 data: nonNull(stringArg()),
             },
+            authorize: (_, args, context) => isUser(_,args,context),
             resolve: (_, args) => {
                 profileLoader.clear(args.id);
                 return prisma.profile.update({
@@ -229,6 +232,7 @@ const mutation = mutationType({
                 bio: nonNull(stringArg()),
                 client_id: nonNull(stringArg()),
             },
+            authorize: (_, args, context) => isUser(_,args,context),
             resolve: (_, args) => {
                 clientLoader.clear(args.id);
                 return prisma.profile.upsert({
@@ -256,6 +260,7 @@ const mutation = mutationType({
             args: {
                 id: nonNull(stringArg()),
             },
+            authorize: (_, args, context) => isUser(_,args,context),
             resolve:async (_, args) => {
                 return await prisma.profile.update({
                     where:{
@@ -269,25 +274,6 @@ const mutation = mutationType({
         });
     },
 });
-
-
-async function retrieve(){
-    const user = await prisma.$queryRaw `SELECT * FROM profile;`;
-    user.forEach(i => {
-        console.log("bio:",i.bio);
-    });
-}
-// retrieve()
-
-
-
-
-
-
-
-
-
-
 
 const user = {
     id: "ndncsnc", name: "dharun", role: "admin"
@@ -308,7 +294,7 @@ const isUser = (_, args, context) => {
     const token = context.req.headers.token;
     try {
         const decoded = jwt.verify(token, secretKey);
-        return decoded
+        return true;
     } catch (error) {
         throw new AuthenticationError('Invalid or expired token');
     }
@@ -327,20 +313,9 @@ const isAdmin = (_, args, context) => {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 const schema = makeSchema({
-    types: [client, profile, query, mutation]
+    types: [client, profile, query, mutation],
+    plugins: [fieldAuthorizePlugin()],
 });
 
 const server = new ApolloServer({ 
